@@ -1,0 +1,10 @@
+const assert=require('node:assert/strict'),fs=require('node:fs'),A=require('../dist/audio-import.js'),S=require('../dist/sds.js');
+const array=b=>b.buffer.slice(b.byteOffset,b.byteOffset+b.length);
+function fixture(bits,codec='NONE',offset=0){const floating=/fl/i.test(codec),width=bits/8,comm=codec==='NONE'?18:24,ssnd=8+offset+3*width,total=12+8+comm+8+ssnd+(ssnd%2),b=Buffer.alloc(total);b.write('FORM');b.writeUInt32BE(total-8,4);b.write(codec==='NONE'?'AIFF':'AIFC',8);b.write('COMM',12);b.writeUInt32BE(comm,16);b.writeUInt16BE(1,20);b.writeUInt32BE(3,22);b.writeUInt16BE(bits,26);b.writeUInt16BE(16383+15,28);b.writeUInt32BE(44100*65536,30);if(codec!=='NONE')b.write(codec,38);const p=20+comm;b.write('SSND',p);b.writeUInt32BE(ssnd,p+4);b.writeUInt32BE(offset,p+8);for(let i=0;i<3;i++){const q=p+16+offset+i*width;if(floating){if(bits===32)b.writeFloatBE(i-1,q);else b.writeDoubleBE(i-1,q);}else{const val=i===0?-(2**(bits-1)):i===1?0:2**(bits-1)-1;codec==='sowt'?b.writeIntLE(val,q,width):b.writeIntBE(val,q,width);}}return array(b);}
+(async()=>{
+for(const bits of [8,16,24,32]){const w=A.aiff(fixture(bits));assert.equal(w.rate,44100);assert.equal(w.channels[0][0],-1);assert.equal(w.channels[0][1],0);assert(w.channels[0][2]>.99);}
+for(const [bits,codec] of [[16,'sowt'],[24,'twos'],[32,'fl32'],[64,'fl64']]){const w=A.aiff(fixture(bits,codec,2));assert.equal(w.frames,3);assert.equal(w.channels[0][0],-1);}
+assert.throws(()=>A.aiff(new ArrayBuffer(12)));let called=false;const fallback=async()=>{called=true;return {frames:1,rate:44100,channels:[new Float32Array([0])],decoded:true};};const f=await A.decode(new ArrayBuffer(4),'file.MP3',fallback);assert(called);assert.equal(f.kind,'MP3');assert(f.decoded);
+if(process.argv[2]){const w=A.aiff(array(fs.readFileSync(process.argv[2])));assert.equal(w.frames,44100);assert.equal(w.rate,44100);const b=S.encode(S.mono(w),w.rate);assert.equal(b.length,140102);}
+console.log('PASS: AIFF PCM 8/16/24/32, AIFF-C endianness/float, SSND offset, malformed files and compressed fallback routing.');
+})().catch(e=>{console.error(e);process.exit(1);});
